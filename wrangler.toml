@@ -1,0 +1,7 @@
+name = "5-minute-dealer-coach"
+compatibility_date = "2024-01-01"
+pages_build_output_dir = "dist"
+
+[[kv_namespaces]]
+binding = "DEALER_KV"
+id = "99b5f5521eff434593937af78c948abc"
