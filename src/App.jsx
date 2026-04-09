@@ -1406,7 +1406,7 @@ CRITICAL RULES:
     if(!feedback||!activeS) return
     const persona = PERSONAS.find(p=>p.id===activePersId)
     const gClass = s=>s?.startsWith('A')?'grade-a':s?.startsWith('B')?'grade-b':(s?.startsWith('D')||s==='F')?'grade-d':'grade-c'
-    const scoreBar = (val) => val==='-'?' - ':`${val}/4 ${'#'.repeat(Math.max(0,val))}${'░'.repeat(Math.max(0,4-val))}`
+    const scoreBar = (val) => val==='-'?' - ':(val+'/4 '+'#'.repeat(Math.max(0,val))+'░'.repeat(Math.max(0,4-val)))
     printPDF(`Coaching Report  -  ${activeS.objection.replace(/"/g,'').substring(0,40)}`,`
       <h1>Voice Drill Coaching Report</h1>
       <div class="sub">${dealer?.repName||'Team Member'} · ${dealer?.dealerName||'Dealership'}</div>
