@@ -1432,7 +1432,7 @@ CRITICAL RULES:
       <h2>ACRA Coaching Breakdown</h2>
       ${[{label:'Acknowledge',content:feedback.acknowledge,cls:'blue'},{label:'Clarify',cls:'yellow',content:feedback.clarify},{label:'Respond',cls:'green',content:feedback.respond},{label:'Advance',cls:'red',content:feedback.advance}].map(({label,content,cls})=>`<div class="card ${cls}"><h3>${label}</h3><div class="val">${content}</div></div>`).join('')}
       <h2>Your Improvement Script</h2>
-      <div class="card green"><h3>Use This Word Track Next Time${persona?`  -  Written for ${persona.name}`:''}</h3><div class="word-track">${feedback.improvement}</div></div>
+      <div class="card green"><h3>Use This Word Track Next Time${persona?'  -  Written for '+persona.name:''}</h3><div class="word-track">${feedback.improvement}</div></div>
       <div class="card red"><h3>Mistake to Avoid</h3><div class="val">${activeS.mistake}</div></div>
     `)
   }
