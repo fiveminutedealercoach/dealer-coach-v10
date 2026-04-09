@@ -1407,34 +1407,34 @@ CRITICAL RULES:
     const persona = PERSONAS.find(p=>p.id===activePersId)
     const gClass = s=>s?.startsWith('A')?'grade-a':s?.startsWith('B')?'grade-b':(s?.startsWith('D')||s==='F')?'grade-d':'grade-c'
     const scoreBar = (val) => val==='-'?' - ':(val+'/4 '+'#'.repeat(Math.max(0,val))+'░'.repeat(Math.max(0,4-val)))
-    printPDF('Coaching Report - '+activeS.objection.replace(/""/g,'').substring(0,40),
-      <h1>Voice Drill Coaching Report</h1>
-      <div class="sub">${dealer?.repName||'Team Member'} · ${dealer?.dealerName||'Dealership'}</div>
-      <div class="date">${new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</div>
-      <div class="divider"></div>
-      <h2>Performance Summary</h2>
-      <div class="card">
-        <div class="score-badge ${gClass(feedback.score)}">${feedback.score}</div>
-        <div style="font-size:14px;color:#333;margin-bottom:8px;">${feedback.score_detail}</div>
-        ${persona?`<div style="font-size:12px;color:#666;margin-bottom:4px;"><strong>Customer:</strong> ${persona.emoji} ${persona.name}  -  ${persona.desc}</div>`:''}
-        <div style="font-size:13px;color:#666;"><strong>Objection:</strong> ${activeS.objection.replace(/"/g,'')}</div>
-      </div>
-      <h2>ACRA Mathematical Scores</h2>
-      <div class="card" style="font-family:monospace;">
-        <table style="width:100%;border-collapse:collapse;">
-          ${[['Acknowledge',feedback.ack_score],['Clarify',feedback.clar_score],['Respond',feedback.resp_score],['Advance',feedback.adv_score]].map(([l,v])=>`
-          <tr><td style="padding:5px 10px;font-weight:700;">${l}</td><td style="padding:5px 10px;color:#1a6bff;font-size:18px;font-weight:900;">${v}/4</td><td style="padding:5px 10px;color:#ccc;font-size:16px;">${'#'.repeat(Math.max(0,v))}${'░'.repeat(Math.max(0,4-v))}</td></tr>`).join('')}
-          <tr style="border-top:2px solid #eee;"><td style="padding:8px 10px;font-weight:900;">TOTAL</td><td style="padding:8px 10px;font-size:20px;font-weight:900;color:#050d1f;" colspan="2">${feedback.total}/16</td></tr>
-        </table>
-      </div>
-      <h2>Model Word Track</h2>
-      <div class="word-track">${activeS.script} ${activeS.followup}</div>
-      <h2>ACRA Coaching Breakdown</h2>
-      ${[{label:'Acknowledge',content:feedback.acknowledge,cls:'blue'},{label:'Clarify',cls:'yellow',content:feedback.clarify},{label:'Respond',cls:'green',content:feedback.respond},{label:'Advance',cls:'red',content:feedback.advance}].map(({label,content,cls})=>`<div class="card ${cls}"><h3>${label}</h3><div class="val">${content}</div></div>`).join('')}
-      <h2>Your Improvement Script</h2>
-      <div class="card green"><h3>Use This Word Track Next Time${persona?'  -  Written for '+persona.name:''}</h3><div class="word-track">${feedback.improvement}</div></div>
-      <div class="card red"><h3>Mistake to Avoid</h3><div class="val">${activeS.mistake}</div></div>
-    `)
+    printPDF('Coaching Report - '+activeS.objection.replace(/""/g,'').substring(0,40), (
+        '<h1>Voice Drill Coaching Report</h1>\n' +
+        '<div class="sub">'+(dealer?.repName||'Team Member')+'' · '+(dealer?.dealerName||'Dealership')+''</div>\n' +
+        '<div class="date">'+(new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'}))+''</div>\n' +
+        '<div class="divider"></div>\n' +
+        '<h2>Performance Summary</h2>\n' +
+        '<div class="card">\n' +
+        '<div class="score-badge '+(gClass(feedback.score))+''">'+(feedback.score)+''</div>\n' +
+        '<div style="font-size:14px;color:#333;margin-bottom:8px;">'+(feedback.score_detail)+''</div>\n' +
+        ''+(persona?`<div style="font-size:12px;color:#666;margin-bottom:4px;"><strong>Customer:</strong> ${persona.emoji} ${persona.name}  -  ${persona.desc}</div>`:'')+''\n' +
+        '<div style="font-size:13px;color:#666;"><strong>Objection:</strong> '+(activeS.objection.replace(/"/g,''))+''</div>\n' +
+        '</div>\n' +
+        '<h2>ACRA Mathematical Scores</h2>\n' +
+        '<div class="card" style="font-family:monospace;">\n' +
+        '<table style="width:100%;border-collapse:collapse;">\n' +
+        ''+([['Acknowledge',feedback.ack_score],['Clarify',feedback.clar_score],['Respond',feedback.resp_score],['Advance',feedback.adv_score]].map(([l,v])=>)+''\n' +
+        '<tr><td style="padding:5px 10px;font-weight:700;">'+(l)+''</td><td style="padding:5px 10px;color:#1a6bff;font-size:18px;font-weight:900;">'+(v)+''/4</td><td style="padding:5px 10px;color:#ccc;font-size:16px;">'+('#'.repeat(Math.max(0,v)))+'''+('░'.repeat(Math.max(0,4-v)))+''</td></tr>`).join(\'\')}\n' +
+        '<tr style="border-top:2px solid #eee;"><td style="padding:8px 10px;font-weight:900;">TOTAL</td><td style="padding:8px 10px;font-size:20px;font-weight:900;color:#050d1f;" colspan="2">'+(feedback.total)+''/16</td></tr>\n' +
+        '</table>\n' +
+        '</div>\n' +
+        '<h2>Model Word Track</h2>\n' +
+        '<div class="word-track">'+(activeS.script)+'' '+(activeS.followup)+''</div>\n' +
+        '<h2>ACRA Coaching Breakdown</h2>\n' +
+        ''+([{label:'Acknowledge',content:feedback.acknowledge,cls:'blue'},{label:'Clarify',cls:'yellow',content:feedback.clarify},{label:'Respond',cls:'green',content:feedback.respond},{label:'Advance',cls:'red',content:feedback.advance}].map(({label,content,cls})=>`<div class="card ${cls}"><h3>${label}</h3><div class="val">${content}</div></div>`).join(''))+''\n' +
+        '<h2>Your Improvement Script</h2>\n' +
+        '<div class="card green"><h3>Use This Word Track Next Time'+(persona?'  -  Written for '+persona.name:'')+''</h3><div class="word-track">'+(feedback.improvement)+''</div></div>\n' +
+        '<div class="card red"><h3>Mistake to Avoid</h3><div class="val">'+(activeS.mistake)+''</div></div>\n'
+      )
   }
 
   const logResult = result => {
