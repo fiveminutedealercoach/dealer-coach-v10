@@ -1173,18 +1173,18 @@ CRITICAL RULES:
       const rawReply = data.content?.[0]?.text || data.content?.[0]?.message || null
       // Per-persona fallbacks  -  never generic
       const personaFallbacks = {
-        dave:    `Look, I already showed you the TrueCar price. Are you going to match it or not?`,
-        linda:   `I appreciate that but I really need more time to think this through.`,
-        mike:    `I hear what you're saying but I still need that payment under four-fifty.`,
-        gary:    `My truck is worth more than what you're telling me. I know what I paid for it.`,
-        carol:   `That sounds reasonable but I'd still want to check online before I decide.`,
-        frank:   `Every time I come in here there's something new that needs fixing. How do I know this is real?`,
-        barbara: `I still don't understand why your price is so much higher than my cousin's shop.`,
-        ray:     `I hear you but Tony has been doing my cars for fifteen years. That's hard to walk away from.`,
-        susan:   `I really do need to call my husband before I can approve anything.`,
-        tom:     `I get it but honestly right now just isn't the right time for me.`,
+        dave:    "Look, I already showed you the TrueCar price. Are you going to match it or not?",
+        linda:   "I appreciate that but I really need more time to think this through.",
+        mike:    "I hear what you're saying but I still need that payment under four-fifty.",
+        gary:    "My truck is worth more than what you're telling me. I know what I paid for it.",
+        carol:   "That sounds reasonable but I'd still want to check online before I decide.",
+        frank:   "Every time I come in here there's something new that needs fixing. How do I know this is real?",
+        barbara: "I still don't understand why your price is so much higher than my cousin's shop.",
+        ray:     "I hear you but Tony has been doing my cars for fifteen years. That's hard to walk away from.",
+        susan:   "I really do need to call my husband before I can approve anything.",
+        tom:     "I get it but honestly right now just isn't the right time for me.",
       }
-      let reply = rawReply || personaFallbacks[persona?.id] || `I hear what you're saying but I'm going to need more than that.`
+      let reply = rawReply || personaFallbacks[persona?.id] || "I hear what you're saying but I'm going to need more than that."
 
       // Check if persona signals close earned
       const closeEarned = reply.includes('[CLOSE_EARNED]')
@@ -1340,35 +1340,37 @@ CRITICAL RULES:
     const avgHesitation = confidenceFlags.length>0?(totalHesitations/confidenceFlags.length):0
     const confidenceScore = Math.max(0,Math.round(10-(avgHesitation*3)))
 
-    const systemPrompt = `You are a brutally honest automotive sales coach. Grade this manager's objection handling using mathematical ACRA scoring.
-
-CUSTOMER PERSONA: ${persona.name}  -  ${persona.desc} Tone: ${persona.tone}.
-OBJECTION: "${activeS.objection}"
-DEPT: ${activeS.dept} | CATEGORY: ${activeS.category}
-
-SITUATION: ${activeS.situation}
-COMMON MISTAKE (earns D or F): ${activeS.mistake}
-MODEL WORD TRACK (what A looks like): "${activeS.script}"
-FOLLOW-UP CLOSE: "${activeS.followup}"
-
-MATHEMATICAL SCORING  -  score each step 0 to 4:
-- ACKNOWLEDGE (0-4): 0=ignored, 1=rushed past, 2=generic, 3=good mirror, 4=exact words + validated emotion
-- CLARIFY (0-4): 0=none, 1=vague, 2=attempted but weak, 3=one clear diagnostic question, 4=precise diagnosis that reframes the objection
-- RESPOND (0-4): 0=generic/defensive, 1=some value, 2=decent pivot, 3=specific dealership advantage, 4=connects directly to customer's stated concern
-- ADVANCE (0-4): 0=no close, 1=weak/open ended, 2=soft close, 3=direct yes/no question, 4=decisive commitment question that requires an answer
-
-GRADE FROM MATH:
-- 14-16 = A+, 12-13 = A, 10-11 = B+, 8-9 = B, 6-7 = C+, 4-5 = C, 2-3 = D, 0-1 = F
-
-IMPORTANT: If they made the common mistake (${activeS.mistake.substring(0,60)}...)  -  cap the grade at D regardless of other scores.
-
-RETURN ONLY valid JSON:
-{"ack_score":3,"clar_score":2,"resp_score":3,"adv_score":1,"total":9,"score":"B","score_detail":"B  -  [one sharp sentence about overall performance]","acknowledge":"[specific  -  quote their words, say what worked or failed]","clarify":"[did they diagnose or just pitch? be specific]","respond":"[compare their pivot to the model  -  generic vs specific]","advance":"[did they close decisively? exact feedback]","improvement":"[complete word-for-word script tailored to ${persona.name} and this objection  -  min 3 sentences, all 4 ACRA steps]"}`
+    const systemPrompt = [
+      "You are a brutally honest automotive sales coach. Grade this manager's objection handling using mathematical ACRA scoring.",
+      "",
+      "CUSTOMER PERSONA: " + persona.name + "  -  " + persona.desc + " Tone: " + persona.tone + ".",
+      "OBJECTION: \"" + activeS.objection + "\"",
+      "DEPT: " + activeS.dept + " | CATEGORY: " + activeS.category,
+      "",
+      "SITUATION: " + activeS.situation,
+      "COMMON MISTAKE (earns D or F): " + activeS.mistake,
+      "MODEL WORD TRACK (what A looks like): \"" + activeS.script + "\"",
+      "FOLLOW-UP CLOSE: \"" + activeS.followup + "\"",
+      "",
+      "MATHEMATICAL SCORING  -  score each step 0 to 4:",
+      "- ACKNOWLEDGE (0-4): 0=ignored, 1=rushed past, 2=generic, 3=good mirror, 4=exact words + validated emotion",
+      "- CLARIFY (0-4): 0=none, 1=vague, 2=attempted but weak, 3=one clear diagnostic question, 4=precise diagnosis that reframes the objection",
+      "- RESPOND (0-4): 0=generic/defensive, 1=some value, 2=decent pivot, 3=specific dealership advantage, 4=connects directly to customer's stated concern",
+      "- ADVANCE (0-4): 0=no close, 1=weak/open ended, 2=soft close, 3=direct yes/no question, 4=decisive commitment question that requires an answer",
+      "",
+      "GRADE FROM MATH:",
+      "- 14-16 = A+, 12-13 = A, 10-11 = B+, 8-9 = B, 6-7 = C+, 4-5 = C, 2-3 = D, 0-1 = F",
+      "",
+      "IMPORTANT: If they made the common mistake (" + activeS.mistake.substring(0,60) + "...)  -  cap the grade at D regardless of other scores.",
+      "",
+      "RETURN ONLY valid JSON:",
+      "{\"ack_score\":3,\"clar_score\":2,\"resp_score\":3,\"adv_score\":1,\"total\":9,\"score\":\"B\",\"score_detail\":\"B  -  [one sharp sentence]\",\"acknowledge\":\"[specific feedback]\",\"clarify\":\"[diagnosis feedback]\",\"respond\":\"[pivot feedback]\",\"advance\":\"[close feedback]\",\"improvement\":\"[word-for-word script tailored to " + persona.name + " - min 3 sentences, all 4 ACRA steps]\"}"
+    ].join("\n")
 
     try {
       const res = await fetch('/ai-proxy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
         system: systemPrompt,
-        messages:[{role:'user',content:`Salesperson responses across 3 exchanges: "${fullConversation}"\nFinal response: "${lastResp}"\nReturn ONLY the JSON:`}]
+        messages:[{role:'user',content:"Salesperson responses across 3 exchanges: \"" + fullConversation + "\"\nFinal response: \"" + lastResp + "\"\nReturn ONLY the JSON:"}]
       })})
       const data = await res.json()
       const raw  = data.content?.[0]?.text||''
@@ -1378,7 +1380,7 @@ RETURN ONLY valid JSON:
           setFeedback(p); setPhase('feedback')
           setTimeout(()=>setLivePhase('idle'), 100)
           // Spoken feedback  -  short and punchy
-          const spoken = `Grade ${p.score}. ${p.acknowledge} ${p.advance}`
+          const spoken = "Grade " + p.score + ". " + p.acknowledge + " " + p.advance
           setSpeaking(true); speak(spoken,()=>setSpeaking(false))
           setLoading(false); return
         }
