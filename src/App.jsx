@@ -1375,7 +1375,7 @@ CRITICAL RULES:
       const data = await res.json()
       const raw  = data.content?.[0]?.text||''
       try {
-        const p = JSON.parse(raw.replace(/\x60\x60\x60json|\x60\x60\x60/g,'').trim())
+        const p = JSON.parse(raw.replace(/\u0060\u0060\u0060json|\u0060\u0060\u0060/g,'').trim())
         if (p.score&&p.improvement) {
           setFeedback(p); setPhase('feedback')
           setTimeout(()=>setLivePhase('idle'), 100)
