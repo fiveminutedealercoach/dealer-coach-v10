@@ -1173,18 +1173,18 @@ CRITICAL RULES:
       const rawReply = data.content?.[0]?.text || data.content?.[0]?.message || null
       // Per-persona fallbacks  -  never generic
       const personaFallbacks = {
-        dave:    `Look, I already showed you the TrueCar price. Are you going to match it or not?`,
-        linda:   `I appreciate that but I really need more time to think this through.`,
-        mike:    `I hear what you're saying but I still need that payment under four-fifty.`,
-        gary:    `My truck is worth more than what you're telling me. I know what I paid for it.`,
-        carol:   `That sounds reasonable but I'd still want to check online before I decide.`,
-        frank:   `Every time I come in here there's something new that needs fixing. How do I know this is real?`,
-        barbara: `I still don't understand why your price is so much higher than my cousin's shop.`,
-        ray:     `I hear you but Tony has been doing my cars for fifteen years. That's hard to walk away from.`,
-        susan:   `I really do need to call my husband before I can approve anything.`,
-        tom:     `I get it but honestly right now just isn't the right time for me.`,
+        dave:    "Look, I already showed you the TrueCar price. Are you going to match it or not?",
+        linda:   "I appreciate that but I really need more time to think this through.",
+        mike:    "I hear what you're saying but I still need that payment under four-fifty.",
+        gary:    "My truck is worth more than what you're telling me. I know what I paid for it.",
+        carol:   "That sounds reasonable but I'd still want to check online before I decide.",
+        frank:   "Every time I come in here there's something new that needs fixing. How do I know this is real?",
+        barbara: "I still don't understand why your price is so much higher than my cousin's shop.",
+        ray:     "I hear you but Tony has been doing my cars for fifteen years. That's hard to walk away from.",
+        susan:   "I really do need to call my husband before I can approve anything.",
+        tom:     "I get it but honestly right now just isn't the right time for me.",
       }
-      let reply = rawReply || personaFallbacks[persona?.id] || `I hear what you're saying but I'm going to need more than that.`
+      let reply = rawReply || personaFallbacks[persona?.id] || "I hear what you're saying but I'm going to need more than that."
 
       // Check if persona signals close earned
       const closeEarned = reply.includes('[CLOSE_EARNED]')
