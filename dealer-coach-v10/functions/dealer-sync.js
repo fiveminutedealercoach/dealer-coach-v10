@@ -1,150 +1,212 @@
-// Cloudflare Pages Function — Dealer KV sync
-// Handles dealer registration, rep activity logging, dashboard reads, and master operator index
+// Cloudflare Pages Function — Dealer data sync via Supabase
+// v2 — adds GM name/email, MRR, status to registerDealer + updateDealer + deleteDealer
+//      for the Operator Console. Existing app calls are unchanged.
 
-export async function onRequestPost(context) {
-  const { request, env } = context
-  const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+const SUPABASE_URL = 'https://zthgswndbgekoboknpae.supabase.co'
+const SUPABASE_KEY = 'sb_publishable_8siqgy2GXbukkL_F4fUzzg_nX1O0BxX'
+
+const cors = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+}
+
+const sb = async (path, method='GET', body=null) => {
+  const opts = {
+    method,
+    headers: {
+      'apikey': SUPABASE_KEY,
+      'Authorization': 'Bearer ' + SUPABASE_KEY,
+      'Content-Type': 'application/json',
+      'Prefer': method==='POST' ? 'return=representation' : ''
+    }
   }
+  if (body) opts.body = JSON.stringify(body)
+  const res = await fetch(SUPABASE_URL + '/rest/v1' + path, opts)
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(err)
+  }
+  const text = await res.text()
+  return text ? JSON.parse(text) : []
+}
+
+export async function onRequest(context) {
+  const { request, env } = context
+
+  // Handle CORS preflight
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { headers: cors })
+  }
+
+  // Only allow POST
+  if (request.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      status: 405,
+      headers: { 'Content-Type': 'application/json', ...cors }
+    })
+  }
+
+  const ok = (data) => new Response(JSON.stringify(data), {
+    headers: { 'Content-Type': 'application/json', ...cors }
+  })
+  const err = (msg, status=500) => new Response(JSON.stringify({ error: msg }), {
+    status, headers: { 'Content-Type': 'application/json', ...cors }
+  })
 
   try {
     const body = await request.json()
     const { action, dealerId, repName, data } = body
 
-    if (!env.DEALER_KV) {
-      return new Response(JSON.stringify({ error: 'KV not configured' }), {
-        status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders }
-      })
-    }
-
-    // ── REGISTER DEALER ───────────────────────────────────────────
+    // ── REGISTER DEALER ──────────────────────────────────────
     if (action === 'registerDealer') {
-      const { dealerName, dept } = data
+      const { dealerName, dept, gmName, gmEmail, mrr, status } = data
       const code = dealerId.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12)
-      const existing = await env.DEALER_KV.get(`dealer:${code}`)
-      if (existing) {
-        return new Response(JSON.stringify({ success: true, code, exists: true }), {
-          headers: { 'Content-Type': 'application/json', ...corsHeaders }
-        })
-      }
-      const dealer = { code, name: dealerName, dept, created: Date.now(), reps: [] }
-      await env.DEALER_KV.put(`dealer:${code}`, JSON.stringify(dealer))
 
-      // ── Write to master operator index ──────────────────────────
-      const masterRaw = await env.DEALER_KV.get('master:dealer_index')
-      const masterIndex = masterRaw ? JSON.parse(masterRaw) : []
-      if (!masterIndex.find(d => d.code === code)) {
-        masterIndex.push({ code, name: dealerName, dept, created: Date.now() })
-        await env.DEALER_KV.put('master:dealer_index', JSON.stringify(masterIndex))
+      const existing = await sb(`/dealers?code=eq.${code}&select=code`)
+      if (existing.length > 0) {
+        return ok({ success: true, code, exists: true })
       }
 
-      return new Response(JSON.stringify({ success: true, code }), {
-        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      await sb('/dealers', 'POST', {
+        code,
+        name: dealerName,
+        dept,
+        gm_name: gmName || '',
+        gm_email: gmEmail || '',
+        mrr: mrr == null ? 997 : mrr,
+        status: status || 'active',
+        created_at: Date.now(),
+        reps: []
       })
+
+      await sb('/dealer_index', 'POST', {
+        code,
+        name: dealerName,
+        dept,
+        gm_name: gmName || '',
+        gm_email: gmEmail || '',
+        mrr: mrr == null ? 997 : mrr,
+        status: status || 'active',
+        created_at: Date.now(),
+        last_active: Date.now()
+      })
+
+      return ok({ success: true, code })
     }
 
-    // ── JOIN DEALER ───────────────────────────────────────────────
+    // ── JOIN DEALER ───────────────────────────────────────────
     if (action === 'joinDealer') {
       const code = dealerId.toUpperCase()
-      const raw = await env.DEALER_KV.get(`dealer:${code}`)
-      if (!raw) {
-        return new Response(JSON.stringify({ error: 'Dealer code not found' }), {
-          status: 404, headers: { 'Content-Type': 'application/json', ...corsHeaders }
-        })
+      const rows = await sb(`/dealers?code=eq.${code}&select=*`)
+      if (!rows.length) return err('Dealer code not found', 404)
+
+      const dealer = rows[0]
+      // Block suspended dealerships from adding new users
+      if (dealer.status === 'suspended') {
+        return err('This dealership account is suspended. Please contact your administrator.', 403)
       }
-      const dealer = JSON.parse(raw)
-      if (!dealer.reps.includes(repName)) {
-        dealer.reps.push(repName)
-        await env.DEALER_KV.put(`dealer:${code}`, JSON.stringify(dealer))
+      const reps = dealer.reps || []
+      if (!reps.includes(repName)) {
+        reps.push(repName)
+        await sb(`/dealers?code=eq.${code}`, 'PATCH', { reps })
       }
-      return new Response(JSON.stringify({ success: true, dealer }), {
-        headers: { 'Content-Type': 'application/json', ...corsHeaders }
-      })
+
+      return ok({ success: true, dealer })
     }
 
-    // ── LOG ACTIVITY ──────────────────────────────────────────────
+    // ── LOG ACTIVITY ──────────────────────────────────────────
     if (action === 'logActivity') {
       const code = dealerId.toUpperCase()
-      const key = `activity:${code}:${Date.now()}`
-      const entry = { repName, ...data, timestamp: Date.now() }
-      await env.DEALER_KV.put(key, JSON.stringify(entry), { expirationTtl: 60 * 60 * 24 * 90 }) // 90 days
-
-      // Update last_active for this dealer in the master index
-      try {
-        const masterRaw = await env.DEALER_KV.get('master:dealer_index')
-        if (masterRaw) {
-          const masterIndex = JSON.parse(masterRaw)
-          const idx = masterIndex.findIndex(d => d.code === code)
-          if (idx !== -1) {
-            masterIndex[idx].lastActive = Date.now()
-            await env.DEALER_KV.put('master:dealer_index', JSON.stringify(masterIndex))
-          }
-        }
-      } catch {}
-
-      return new Response(JSON.stringify({ success: true }), {
-        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      await sb('/activity', 'POST', {
+        dealer_code: code,
+        rep_name: repName,
+        type: data.type || 'drill',
+        script: data.script || '',
+        result: data.result || '',
+        dept: data.dept || 'sales',
+        timestamp: Date.now(),
+        data: data
       })
+
+      await sb(`/dealer_index?code=eq.${code}`, 'PATCH', {
+        last_active: Date.now()
+      })
+
+      return ok({ success: true })
     }
 
-    // ── GET DASHBOARD ─────────────────────────────────────────────
+    // ── GET DASHBOARD ─────────────────────────────────────────
     if (action === 'getDashboard') {
       const code = dealerId.toUpperCase()
-      const dealerRaw = await env.DEALER_KV.get(`dealer:${code}`)
-      if (!dealerRaw) {
-        return new Response(JSON.stringify({ error: 'Dealer not found' }), {
-          status: 404, headers: { 'Content-Type': 'application/json', ...corsHeaders }
-        })
-      }
-      const dealer = JSON.parse(dealerRaw)
-      const list = await env.DEALER_KV.list({ prefix: `activity:${code}:`, limit: 100 })
-      const activities = await Promise.all(
-        list.keys.map(async k => {
-          const v = await env.DEALER_KV.get(k.name)
-          return v ? JSON.parse(v) : null
-        })
+      const dealers = await sb(`/dealers?code=eq.${code}&select=*`)
+      if (!dealers.length) return err('Dealer not found', 404)
+
+      const activities = await sb(
+        `/activity?dealer_code=eq.${code}&select=*&order=timestamp.desc&limit=100`
       )
-      const sorted = activities.filter(Boolean).sort((a, b) => b.timestamp - a.timestamp)
-      return new Response(JSON.stringify({ dealer, activities: sorted }), {
-        headers: { 'Content-Type': 'application/json', ...corsHeaders }
-      })
+
+      return ok({ dealer: dealers[0], activities })
     }
 
-    // ── GET MASTER DASHBOARD (operator view) ──────────────────────
-    if (action === 'getMasterDashboard') {
-      // Verify operator key
-      if (data?.adminKey !== env.ADMIN_KEY) {
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-          status: 401, headers: { 'Content-Type': 'application/json', ...corsHeaders }
-        })
+    // ── UPDATE DEALER (operator only) ─────────────────────────
+    if (action === 'updateDealer') {
+      if (data?.adminKey !== env.ADMIN_KEY) return err('Unauthorized', 401)
+      const code = dealerId.toUpperCase()
+      const patch = data.patch || {}
+
+      // Map friendly names → column names, only allow known fields
+      const colMap = {
+        name: 'name', gmName: 'gm_name', gmEmail: 'gm_email',
+        mrr: 'mrr', status: 'status', dept: 'dept'
       }
+      const dbPatch = {}
+      Object.keys(colMap).forEach(k => {
+        if (patch[k] !== undefined) dbPatch[colMap[k]] = patch[k]
+      })
+      if (Object.keys(dbPatch).length === 0) return err('No valid fields to update', 400)
 
-      const masterRaw = await env.DEALER_KV.get('master:dealer_index')
-      const masterIndex = masterRaw ? JSON.parse(masterRaw) : []
+      await sb(`/dealers?code=eq.${code}`, 'PATCH', dbPatch)
+      // Mirror the same fields into the index (ignore reps-only fields)
+      const idxPatch = { ...dbPatch }
+      await sb(`/dealer_index?code=eq.${code}`, 'PATCH', idxPatch)
 
-      // For each dealer, get their activity stats
-      const dealerStats = await Promise.all(masterIndex.map(async (d) => {
+      return ok({ success: true })
+    }
+
+    // ── DELETE DEALER (operator only) ─────────────────────────
+    if (action === 'deleteDealer') {
+      if (data?.adminKey !== env.ADMIN_KEY) return err('Unauthorized', 401)
+      const code = dealerId.toUpperCase()
+
+      // Delete activity, dealer record, and index row
+      try { await sb(`/activity?dealer_code=eq.${code}`, 'DELETE') } catch {}
+      try { await sb(`/dealers?code=eq.${code}`, 'DELETE') } catch {}
+      try { await sb(`/dealer_index?code=eq.${code}`, 'DELETE') } catch {}
+
+      return ok({ success: true })
+    }
+
+    // ── GET MASTER DASHBOARD ──────────────────────────────────
+    if (action === 'getMasterDashboard') {
+      if (data?.adminKey !== env.ADMIN_KEY) return err('Unauthorized', 401)
+
+      const index = await sb('/dealer_index?select=*&order=last_active.desc')
+
+      const dealerStats = await Promise.all(index.map(async (d) => {
         try {
-          const dealerRaw = await env.DEALER_KV.get(`dealer:${d.code}`)
-          const dealerData = dealerRaw ? JSON.parse(dealerRaw) : {}
-          const list = await env.DEALER_KV.list({ prefix: `activity:${d.code}:`, limit: 200 })
-          const activities = await Promise.all(
-            list.keys.map(async k => {
-              const v = await env.DEALER_KV.get(k.name)
-              return v ? JSON.parse(v) : null
-            })
+          const dealerRows = await sb(`/dealers?code=eq.${d.code}&select=*`)
+          const dealerData = dealerRows[0] || {}
+          const acts = await sb(
+            `/activity?dealer_code=eq.${d.code}&select=*&order=timestamp.desc&limit=200`
           )
-          const acts = activities.filter(Boolean).sort((a, b) => b.timestamp - a.timestamp)
           const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
           const weekActs = acts.filter(a => a.timestamp > weekAgo)
-          const reps = [...new Set(acts.map(a => a.repName))].filter(Boolean)
+          const reps = [...new Set(acts.map(a => a.rep_name))].filter(Boolean)
           const won = acts.filter(a => a.result === 'won' || a.result?.startsWith('A') || a.result?.startsWith('B')).length
-          const lastActive = acts[0]?.timestamp || d.created
+          const lastActive = acts[0]?.timestamp || d.created_at
           const daysSinceActive = Math.floor((Date.now() - lastActive) / (1000 * 60 * 60 * 24))
 
-          // Engagement health score 0-100
           let health = 0
           if (weekActs.length >= 10) health += 40
           else if (weekActs.length >= 5) health += 25
@@ -160,8 +222,13 @@ export async function onRequestPost(context) {
             code: d.code,
             name: d.name || dealerData.name || d.code,
             dept: d.dept,
-            created: d.created,
+            gmName: d.gm_name || dealerData.gm_name || '',
+            gmEmail: d.gm_email || dealerData.gm_email || '',
+            mrr: d.mrr == null ? (dealerData.mrr == null ? 997 : dealerData.mrr) : d.mrr,
+            status: d.status || dealerData.status || 'active',
+            created: d.created_at,
             reps: reps.length,
+            teamMembers: dealerData.reps || [],
             totalDrills: acts.length,
             weekDrills: weekActs.length,
             weekHuddles: weekActs.filter(a => a.type === 'huddle').length,
@@ -171,34 +238,23 @@ export async function onRequestPost(context) {
             daysSinceActive,
             health,
             recentActivity: acts.slice(0, 3),
+            hasLoggedIn: (dealerData.reps || []).length > 0,
+            hasActivity: acts.length > 0,
+            hasHuddle: acts.some(a => a.type === 'huddle'),
+            hasDrill: acts.some(a => a.type === 'voice_drill' || a.type === 'voice'),
           }
         } catch {
-          return { code: d.code, name: d.name || d.code, error: true, health: 0, totalDrills: 0 }
+          return { code: d.code, name: d.name || d.code, error: true, health: 0, totalDrills: 0, status: d.status || 'active' }
         }
       }))
 
       const sorted = dealerStats.sort((a, b) => b.health - a.health)
-      return new Response(JSON.stringify({ dealers: sorted, total: sorted.length }), {
-        headers: { 'Content-Type': 'application/json', ...corsHeaders }
-      })
+      return ok({ dealers: sorted, total: sorted.length })
     }
 
-    return new Response(JSON.stringify({ error: 'Unknown action' }), {
-      status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders }
-    })
+    return err('Unknown action', 400)
+
   } catch (e) {
-    return new Response(JSON.stringify({ error: e.message }), {
-      status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders }
-    })
+    return err(e.message)
   }
-}
-
-export async function onRequestOptions() {
-  return new Response(null, {
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-    }
-  })
 }
