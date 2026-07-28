@@ -1,6 +1,17 @@
 // Cloudflare Pages Function — Dealer data sync via Supabase
-// v2 — adds GM name/email, MRR, status to registerDealer + updateDealer + deleteDealer
-//      for the Operator Console. Existing app calls are unchanged.
+// v4 — Operator Console: seat limits + richer dashboard payload.
+//      • verifyOperator  — lets the console check the admin key WITHOUT the key
+//                          ever being written into the console HTML.
+//      • updateDealer    — now returns the updated row so the console can patch
+//                          its table in place instead of refetching everything.
+//      • planned_team / gm_role support on registerDealer + updateDealer.
+//      • gm_email/gm_name now fall back to the app's own onboarding fields, so a
+//        manager who self-registers in the app no longer shows a blank GM.
+//      • seat_limit    - 15 users per rooftop by default, enforced in joinDealer.
+//                        The operator can raise it per dealership from the console.
+//      • getMasterDashboard now returns seatLimit and the last 10 activities
+//                        per rooftop so the console can show an activity feed.
+//      Existing app calls are unchanged and still require no admin key.
 
 const SUPABASE_URL = 'https://zthgswndbgekoboknpae.supabase.co'
 const SUPABASE_KEY = 'sb_publishable_8siqgy2GXbukkL_F4fUzzg_nX1O0BxX'
@@ -18,7 +29,9 @@ const sb = async (path, method='GET', body=null) => {
       'apikey': SUPABASE_KEY,
       'Authorization': 'Bearer ' + SUPABASE_KEY,
       'Content-Type': 'application/json',
-      'Prefer': method==='POST' ? 'return=representation' : ''
+      // PATCH needs representation too — that is what lets updateDealer hand the
+      // refreshed row back to the console for an in-place table update.
+      'Prefer': (method === 'POST' || method === 'PATCH') ? 'return=representation' : ''
     }
   }
   if (body) opts.body = JSON.stringify(body)
@@ -58,9 +71,26 @@ export async function onRequest(context) {
     const body = await request.json()
     const { action, dealerId, repName, data } = body
 
+    // Shared operator gate. env.ADMIN_KEY is set in Cloudflare → Settings →
+    // Environment variables. If it is missing, everything operator-only fails
+    // closed rather than silently allowing access.
+    const isOperator = () => !!env.ADMIN_KEY && data?.adminKey === env.ADMIN_KEY
+
+    // ── VERIFY OPERATOR ───────────────────────────────────────
+    // The console posts the key you typed at the gate. Nothing is stored and
+    // nothing is returned except pass/fail, so the console file itself can ship
+    // with no secret inside it.
+    if (action === 'verifyOperator') {
+      if (!env.ADMIN_KEY) return err('ADMIN_KEY is not configured on the server', 500)
+      if (!isOperator()) return err('Invalid access key', 401)
+      return ok({ success: true })
+    }
+
     // ── REGISTER DEALER ──────────────────────────────────────
+    // Intentionally NOT operator-gated: the app's own onboarding screen calls
+    // this when a manager creates a rooftop themselves.
     if (action === 'registerDealer') {
-      const { dealerName, dept, gmName, gmEmail, mrr, status } = data
+      const { dealerName, dept, gmName, gmEmail, email, gmRole, mrr, status, plannedTeam, seatLimit } = data
       const code = dealerId.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12)
 
       const existing = await sb(`/dealers?code=eq.${code}&select=code`)
@@ -68,14 +98,22 @@ export async function onRequest(context) {
         return ok({ success: true, code, exists: true })
       }
 
+      // Fall back to the app's onboarding fields so self-registered dealers
+      // still get a usable GM name/email in the operator console.
+      const contactName  = gmName  || repName || ''
+      const contactEmail = gmEmail || email   || ''
+
       await sb('/dealers', 'POST', {
         code,
         name: dealerName,
         dept,
-        gm_name: gmName || '',
-        gm_email: gmEmail || '',
+        gm_name: contactName,
+        gm_email: contactEmail,
+        gm_role: gmRole || 'gm',
         mrr: mrr == null ? 997 : mrr,
         status: status || 'active',
+        planned_team: Array.isArray(plannedTeam) ? plannedTeam : [],
+        seat_limit: seatLimit == null ? 15 : seatLimit,
         created_at: Date.now(),
         reps: []
       })
@@ -84,8 +122,8 @@ export async function onRequest(context) {
         code,
         name: dealerName,
         dept,
-        gm_name: gmName || '',
-        gm_email: gmEmail || '',
+        gm_name: contactName,
+        gm_email: contactEmail,
         mrr: mrr == null ? 997 : mrr,
         status: status || 'active',
         created_at: Date.now(),
@@ -108,6 +146,12 @@ export async function onRequest(context) {
       }
       const reps = dealer.reps || []
       if (!reps.includes(repName)) {
+        // Seat cap. Existing users can always get back in; only NEW joins are
+        // blocked, so nobody gets locked out of an account they already use.
+        const cap = dealer.seat_limit == null ? 15 : dealer.seat_limit
+        if (reps.length >= cap) {
+          return err('This dealership has reached its user limit of ' + cap + '. Please contact your manager.', 403)
+        }
         reps.push(repName)
         await sb(`/dealers?code=eq.${code}`, 'PATCH', { reps })
       }
@@ -151,14 +195,15 @@ export async function onRequest(context) {
 
     // ── UPDATE DEALER (operator only) ─────────────────────────
     if (action === 'updateDealer') {
-      if (data?.adminKey !== env.ADMIN_KEY) return err('Unauthorized', 401)
+      if (!isOperator()) return err('Unauthorized', 401)
       const code = dealerId.toUpperCase()
       const patch = data.patch || {}
 
       // Map friendly names → column names, only allow known fields
       const colMap = {
-        name: 'name', gmName: 'gm_name', gmEmail: 'gm_email',
-        mrr: 'mrr', status: 'status', dept: 'dept'
+        name: 'name', gmName: 'gm_name', gmEmail: 'gm_email', gmRole: 'gm_role',
+        mrr: 'mrr', status: 'status', dept: 'dept', plannedTeam: 'planned_team',
+        seatLimit: 'seat_limit'
       }
       const dbPatch = {}
       Object.keys(colMap).forEach(k => {
@@ -166,17 +211,26 @@ export async function onRequest(context) {
       })
       if (Object.keys(dbPatch).length === 0) return err('No valid fields to update', 400)
 
-      await sb(`/dealers?code=eq.${code}`, 'PATCH', dbPatch)
-      // Mirror the same fields into the index (ignore reps-only fields)
-      const idxPatch = { ...dbPatch }
-      await sb(`/dealer_index?code=eq.${code}`, 'PATCH', idxPatch)
+      const updated = await sb(`/dealers?code=eq.${code}`, 'PATCH', dbPatch)
 
-      return ok({ success: true })
+      // Mirror only the columns the index actually has. planned_team and gm_role
+      // live on `dealers` alone, so they are stripped out here.
+      const idxPatch = { ...dbPatch }
+      delete idxPatch.planned_team
+      delete idxPatch.gm_role
+      delete idxPatch.seat_limit
+      if (Object.keys(idxPatch).length > 0) {
+        await sb(`/dealer_index?code=eq.${code}`, 'PATCH', idxPatch)
+      }
+
+      // Hand the fresh row back so the console can update one table row in place
+      // instead of re-running the whole master dashboard query.
+      return ok({ success: true, dealer: updated[0] || null })
     }
 
     // ── DELETE DEALER (operator only) ─────────────────────────
     if (action === 'deleteDealer') {
-      if (data?.adminKey !== env.ADMIN_KEY) return err('Unauthorized', 401)
+      if (!isOperator()) return err('Unauthorized', 401)
       const code = dealerId.toUpperCase()
 
       // Delete activity, dealer record, and index row
@@ -189,7 +243,7 @@ export async function onRequest(context) {
 
     // ── GET MASTER DASHBOARD ──────────────────────────────────
     if (action === 'getMasterDashboard') {
-      if (data?.adminKey !== env.ADMIN_KEY) return err('Unauthorized', 401)
+      if (!isOperator()) return err('Unauthorized', 401)
 
       const index = await sb('/dealer_index?select=*&order=last_active.desc')
 
@@ -224,11 +278,14 @@ export async function onRequest(context) {
             dept: d.dept,
             gmName: d.gm_name || dealerData.gm_name || '',
             gmEmail: d.gm_email || dealerData.gm_email || '',
+            gmRole: dealerData.gm_role || 'gm',
             mrr: d.mrr == null ? (dealerData.mrr == null ? 997 : dealerData.mrr) : d.mrr,
             status: d.status || dealerData.status || 'active',
             created: d.created_at,
             reps: reps.length,
             teamMembers: dealerData.reps || [],
+            plannedTeam: dealerData.planned_team || [],
+            seatLimit: dealerData.seat_limit == null ? 15 : dealerData.seat_limit,
             totalDrills: acts.length,
             weekDrills: weekActs.length,
             weekHuddles: weekActs.filter(a => a.type === 'huddle').length,
@@ -237,14 +294,14 @@ export async function onRequest(context) {
             lastActive,
             daysSinceActive,
             health,
-            recentActivity: acts.slice(0, 3),
+            recentActivity: acts.slice(0, 10),
             hasLoggedIn: (dealerData.reps || []).length > 0,
             hasActivity: acts.length > 0,
             hasHuddle: acts.some(a => a.type === 'huddle'),
             hasDrill: acts.some(a => a.type === 'voice_drill' || a.type === 'voice'),
           }
         } catch {
-          return { code: d.code, name: d.name || d.code, error: true, health: 0, totalDrills: 0, status: d.status || 'active' }
+          return { code: d.code, name: d.name || d.code, error: true, health: 0, totalDrills: 0, status: d.status || 'active', plannedTeam: [], teamMembers: [], seatLimit: 15, recentActivity: [] }
         }
       }))
 
