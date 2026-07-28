@@ -1,5 +1,5 @@
 // Cloudflare Pages Function — Dealer data sync via Supabase
-// v4 — Operator Console: seat limits + richer dashboard payload.
+// v5 — Operator Console: seat limits, richer payload, per-rooftop notes.
 //      • verifyOperator  — lets the console check the admin key WITHOUT the key
 //                          ever being written into the console HTML.
 //      • updateDealer    — now returns the updated row so the console can patch
@@ -11,6 +11,8 @@
 //                        The operator can raise it per dealership from the console.
 //      • getMasterDashboard now returns seatLimit and the last 10 activities
 //                        per rooftop so the console can show an activity feed.
+//      • notes         - free-text operator notes per rooftop (who you spoke to,
+//                        what they said, when to follow up).
 //      Existing app calls are unchanged and still require no admin key.
 
 const SUPABASE_URL = 'https://zthgswndbgekoboknpae.supabase.co'
@@ -203,7 +205,7 @@ export async function onRequest(context) {
       const colMap = {
         name: 'name', gmName: 'gm_name', gmEmail: 'gm_email', gmRole: 'gm_role',
         mrr: 'mrr', status: 'status', dept: 'dept', plannedTeam: 'planned_team',
-        seatLimit: 'seat_limit'
+        seatLimit: 'seat_limit', notes: 'notes'
       }
       const dbPatch = {}
       Object.keys(colMap).forEach(k => {
@@ -219,6 +221,7 @@ export async function onRequest(context) {
       delete idxPatch.planned_team
       delete idxPatch.gm_role
       delete idxPatch.seat_limit
+      delete idxPatch.notes
       if (Object.keys(idxPatch).length > 0) {
         await sb(`/dealer_index?code=eq.${code}`, 'PATCH', idxPatch)
       }
@@ -286,6 +289,7 @@ export async function onRequest(context) {
             teamMembers: dealerData.reps || [],
             plannedTeam: dealerData.planned_team || [],
             seatLimit: dealerData.seat_limit == null ? 15 : dealerData.seat_limit,
+            notes: dealerData.notes || '',
             totalDrills: acts.length,
             weekDrills: weekActs.length,
             weekHuddles: weekActs.filter(a => a.type === 'huddle').length,
@@ -301,7 +305,7 @@ export async function onRequest(context) {
             hasDrill: acts.some(a => a.type === 'voice_drill' || a.type === 'voice'),
           }
         } catch {
-          return { code: d.code, name: d.name || d.code, error: true, health: 0, totalDrills: 0, status: d.status || 'active', plannedTeam: [], teamMembers: [], seatLimit: 15, recentActivity: [] }
+          return { code: d.code, name: d.name || d.code, error: true, health: 0, totalDrills: 0, status: d.status || 'active', plannedTeam: [], teamMembers: [], seatLimit: 15, recentActivity: [], notes: '' }
         }
       }))
 
@@ -314,5 +318,4 @@ export async function onRequest(context) {
   } catch (e) {
     return err(e.message)
   }
-  
 }
